@@ -1,0 +1,19 @@
+export const schoolNames={'acshs':'Allen County–Scottsville High School','allen-county-high':'Allen County High School','scottsville-high':'Scottsville High School','community':'Community Schools'};
+export const schoolAliases={'acshs':'ACSHS ACS Allen County Scottsville High School Patriots','allen-county-high':'ACHS Allen County High School Patriots','scottsville-high':'SHS Scottsville High School Pointers'};
+const aliases={'School History':'Schools & History','Honors':'Honors & Recognition','Academics Arts and Activities':'Academics, Arts & Activities','Photos and Ephemera':'Photos & Ephemera'};
+export function normalized(value){return String(value??'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
+export function collection(item){return aliases[item.collection]||item.collection||'Uncategorized';}
+export function terms(query){return normalized(query).split(' ').filter(Boolean);}
+export function metadata(item){return [item.title,item.year,item.description,item.sourceCitation,collection(item),schoolNames[item.schoolId],schoolAliases[item.schoolId],...(item.people||[]),...(item.tags||[])].join(' ');}
+export function searchable(item){return normalized([metadata(item),...(item.passages||[]).map(p=>[p.text,p.printedPage,p.digitalPage,p.sourceCitation].join(' '))].join(' '));}
+export function matches(item,filters){return (!filters.school||(filters.school==='community'?!!item.schoolId&&!['acshs','allen-county-high','scottsville-high'].includes(item.schoolId):item.schoolId===filters.school))&&(filters.collection==='All collections'||collection(item)===filters.collection)&&(!filters.year||String(item.year)===filters.year)&&terms(filters.query).every(term=>searchable(item).includes(term));}
+export function matchingPassages(item,query){const context=normalized(metadata(item));const wanted=terms(query).filter(t=>!context.includes(t));if(!wanted.length)return [];return (item.passages||[]).filter(p=>wanted.every(t=>normalized(p.text).includes(t)));}
+export function safeUrl(value,base){if(typeof value!=='string'||!value.trim())return null;try{const url=new URL(value,base);return url.protocol==='https:'?url.href:null;}catch{return null;}}
+export function pdfUrl(item,base){const url=safeUrl(item.pdfUrl||item.mediaUrl,base);if(!url)return null;const u=new URL(url);if(u.hostname==='drive.google.com'||u.hostname==='docs.google.com')return null;return item.mediaType==='application/pdf'||/\.pdf$/i.test(u.pathname)?url:null;}
+export function isYearbook(item){return collection(item)==='Yearbooks' || item.mediaType==='application/pdf';}
+export function pageNumber(value,max=100000){const n=Number(value);return Number.isSafeInteger(n)&&n>=1&&n<=max?n:1;}
+export function viewerUrl(item,page=1,query=''){const params=new URLSearchParams({id:item.id,page:String(pageNumber(page))});if(query)params.set('q',query);return './yearbook.html?'+params;}
+export function locationLabel(p){return [p.printedPage?'Printed page '+p.printedPage:'',p.digitalPage?'PDF page '+p.digitalPage:'',p.startSeconds!==''&&p.startSeconds!=null?'Time '+p.startSeconds+' seconds':''].filter(Boolean).join(' · ')||'Source passage';}
+export function isDraft(p){return p.reviewStatus==='ocr_draft';}
+export function excerpt(text,query,length=200){text=String(text||'');const word=terms(query).find(t=>text.toLowerCase().includes(t));const pos=word?text.toLowerCase().indexOf(word):0;const start=Math.max(0,pos-65);return (start?'…':'')+text.slice(start,start+length)+(start+length<text.length?'…':'');}
+export function parseCatalog(data){if(data?.schemaVersion!==1||!Array.isArray(data.items))throw new Error('Unsupported catalog');return data.items.filter(i=>i&&typeof i.id==='string'&&typeof i.title==='string').map(i=>({...i,people:Array.isArray(i.people)?i.people:[],tags:Array.isArray(i.tags)?i.tags:[],passages:Array.isArray(i.passages)?i.passages.filter(p=>p&&typeof p==='object'):[]}));}
